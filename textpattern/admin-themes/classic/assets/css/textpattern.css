@@ -2852,7 +2852,13 @@ button {
   #main_content .text .title input {
     font-weight: bold;
   }
-  #main_content .author {
+  #main_content .text .body textarea {
+    height: 48vh;
+  }
+  #main_content .text .excerpt textarea {
+    height: 12vh;
+  }
+  #main_content .author small {
     display: block;
     margin-top: -1em;
     color: #777777;
