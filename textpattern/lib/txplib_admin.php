@@ -4,7 +4,7 @@
  * Textpattern Content Management System
  * https://textpattern.com/
  *
- * Copyright (C) 2017 The Textpattern Development Team
+ * Copyright (C) 2018 The Textpattern Development Team
  *
  * This file is part of Textpattern.
  *
@@ -59,7 +59,7 @@ function send_account_activation($name)
 
             n.n.gTxt('your_login_is').' '.$name.
             n.n.gTxt('account_activation_confirmation').
-            n.hu.'textpattern/index.php?activate='.$activation_code.
+            n.ahu.'index.php?activate='.$activation_code.
             n.n.gTxt('link_expires', array(
                 '{year}'  => $expiryYear,
                 '{month}' => $expiryMonth,
@@ -131,7 +131,7 @@ function send_reset_confirmation_request($name)
 
         $message = gTxt('salutation', array('{name}' => $name)).
             n.n.gTxt('password_reset_confirmation').
-            n.hu.'textpattern/index.php?confirm='.$confirm.
+            n.ahu.'index.php?confirm='.$confirm.
             n.n.gTxt('link_expires', array(
                 '{year}'  => $expiryYear,
                 '{month}' => $expiryMonth,
@@ -144,11 +144,10 @@ function send_reset_confirmation_request($name)
             return array(gTxt('could_not_mail'), E_ERROR);
         }
     } else {
-        // Though 'unknown_author' could be thrown, send generic 'request_sent'
-        // message instead so that (non-)existence of account names are not leaked.
-        // Since this is a short circuit, there's a possibility of a timing attack
-        // revealing the existence of an account, which we could defend against
-        // to some degree.
+        // Send generic 'request_sent' message so that (non-)existence of
+        // account names are not leaked. Since this is a short circuit, there's
+        // a possibility of a timing attack revealing the existence of an
+        // account, which we could defend against to some degree.
         return gTxt('password_reset_confirmation_request_sent');
     }
 }
@@ -189,7 +188,7 @@ function send_password($RealName, $name, $email, $password)
         n.n.gTxt('your_login_is').' '.$name.
         n.gTxt('your_password_is').' '.$password.
 
-        n.n.gTxt('log_in_at').' '.hu.'textpattern/index.php';
+        n.n.gTxt('log_in_at').' '.ahu.'index.php';
 
     return txpMail($email, "[$sitename] ".gTxt('your_login_info'), $message);
 }
@@ -230,7 +229,7 @@ function send_new_password($password, $email, $name)
 
         n.n.gTxt('your_password_is').' '.$password.
 
-        n.n.gTxt('log_in_at').' '.hu.'textpattern/index.php';
+        n.n.gTxt('log_in_at').' '.ahu.'index.php';
 
     return txpMail($email, "[$sitename] ".gTxt('your_new_password'), $message);
 }

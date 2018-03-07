@@ -1,5 +1,8 @@
 # Textpattern CMS
 
+[![Dependencies Status](https://david-dm.org/textpattern/textpattern/status.svg)](https://david-dm.org/textpattern/textpattern)
+[![devDependencies Status](https://david-dm.org/textpattern/textpattern/dev-status.svg)](https://david-dm.org/textpattern/textpattern?type=dev)
+
 [![Textpattern Logo](https://textpattern.io/assets/img/branding/carver/carver-128px.svg)](https://textpattern.com/)
 
 **A flexible, elegant and easy-to-use content management system.**
@@ -60,7 +63,7 @@ Textpattern also has social network presences on
 ## Contributing
 
 Want to help out with the development of Textpattern CMS? Please refer to the
-[Contributing documentation](https://github.com/textpattern/textpattern/blob/dev/CONTRIBUTING.md)
+[Contributing documentation](https://github.com/textpattern/textpattern/blob/dev/.github/CONTRIBUTING.md)
 for full details.
 
 ## GitHub topic tags
@@ -75,6 +78,60 @@ discoverable resources:
 * `textpattern-theme`
 * `textpattern-website` (for websites built with Textpattern)
 * `textpattern-development` (for development resources)
+
+## Additional development tools
+
+Various components used within Textpattern CMS (such as the bundled themes and
+language translations) are maintained in standalone repositories. We have a
+simple development toolset built on [Node.js](https://nodejs.org/) to pull the
+distribution files of those repositories into the core as required.
+
+You can install Node.js using the [installer](https://nodejs.org/en/download/)
+or [package manager](https://nodejs.org/en/download/package-manager/).
+
+Install required dev tools:
+
+```ShellSession
+npm install
+```
+
+You can then pull the following components from the CLI, like so:
+
+```ShellSession
+npm run get-default-theme
+npm run get-classic-admin-theme
+npm run get-hive-admin-theme
+npm run get-pophelp
+npm run get-textpacks
+npm run get-dependencies
+```
+
+To request a specific tag or branch:
+
+```ShellSession
+npm run get-default-theme 4.7.0
+npm run get-classic-admin-theme 4.6.1
+npm run get-classic-admin-theme 4.6.x
+npm run get-hive-admin-theme 4.6.x
+npm run get-textpacks 4.6.x
+```
+
+You can verify PHP code via a PHP linter from the CLI, like so:
+
+```ShellSession
+npm run phplint
+```
+
+Release tools:
+
+Usage: `npm run txp-gitdist <version> [dest-dir]` (`dest-dir` defaults to a
+temporary location).
+
+```ShellSession
+npm run txp-index
+npm run txp-checksums
+npm run txp-gitdist 1.2.3 ../my-dest-dir
+```
 
 ## Legal
 

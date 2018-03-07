@@ -4,7 +4,7 @@
  * Textpattern Content Management System
  * https://textpattern.com/
  *
- * Copyright (C) 2017 The Textpattern Development Team
+ * Copyright (C) 2018 The Textpattern Development Team
  *
  * This file is part of Textpattern.
  *
@@ -45,10 +45,16 @@ class Partial
 
         extract(lAtts(array(
             'name'    => '',
-            'default' => null
+            'default' => null,
         ), $atts));
 
-        $inner = isset($yield[$name]) ? end($yield[$name]) : (isset($default) ? $default : ($thing ? parse($thing) : $thing));
+        if (isset($yield[$name])) {
+            $inner = end($yield[$name]);
+        }
+
+        if (!isset($inner)) {
+            $inner = isset($default) ? $default : ($thing ? parse($thing) : $thing);
+        }
 
         return $inner;
     }
@@ -67,7 +73,7 @@ class Partial
 
         extract(lAtts(array(
             'name'  => '',
-            'value' => null
+            'value' => null,
         ), $atts));
 
         $inner = isset($yield[$name]) ? end($yield[$name]) : null;

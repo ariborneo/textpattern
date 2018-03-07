@@ -4,8 +4,7 @@
  * Textpattern Content Management System
  * https://textpattern.com/
  *
- * Copyright (C) 2005 Dean Allen
- * Copyright (C) 2017 The Textpattern Development Team
+ * Copyright (C) 2018 The Textpattern Development Team
  *
  * This file is part of Textpattern.
  *
@@ -122,8 +121,7 @@ function doLoginForm($message)
         $out[] = hed($pageTitle, 1, array('id' => 'txp-'.$class.'-heading')).
             inputLabel(
                 $label,
-                fInput('password', 'p_password', '', 'txp-maskable txp-strength-hint', '', '', INPUT_REGULAR, '', $label, false, true).
-                n.tag(null, 'div', array('class' => 'strength-meter')).
+                fInput('password', 'p_password', '', 'txp-maskable', '', '', INPUT_REGULAR, '', $label, false, true).
                 n.tag(
                     checkbox('unmask', 1, false, 0, 'show_password').
                     n.tag(gTxt('show_password'), 'label', array('for' => 'show_password')),
@@ -170,19 +168,8 @@ function doLoginForm($message)
 
     pagetop($pageTitle, $message);
 
-    gTxtScript(array(
-        'password_strength_0',
-        'password_strength_1',
-        'password_strength_2',
-        'password_strength_3',
-        'password_strength_4',
-        )
-    );
-
     echo form(
         join('', $out), '', '', 'post', 'txp-login', '', 'login_form').
-
-    script_js('vendors/dropbox/zxcvbn/zxcvbn.js', TEXTPATTERN_SCRIPT_URL).
     script_js('textpattern.textarray = '.json_encode($textarray_script, TEXTPATTERN_JSON)).
     n.'</main><!-- /txp-body -->'.n.'</body>'.n.'</html>';
 
@@ -224,6 +211,7 @@ function doTxpValidate()
     $logout     = gps('logout');
     $message    = '';
     $pub_path   = preg_replace('|//$|', '/', rhu.'/');
+    $cookie_domain = (defined('cookie_domain')) ? cookie_domain : '';
 
     if (cs('txp_login') && strpos(cs('txp_login'), ',')) {
         $txp_login = explode(',', cs('txp_login'));
@@ -236,7 +224,7 @@ function doTxpValidate()
 
     if ($logout) {
         setcookie('txp_login', '', time() - 3600);
-        setcookie('txp_login_public', '', time() - 3600, $pub_path);
+        setcookie('txp_login_public', '', time() - 3600, $pub_path, $cookie_domain);
     }
 
     if ($c_userid && strlen($c_hash) === 32) {
@@ -266,7 +254,7 @@ function doTxpValidate()
         } else {
             txp_status_header('401 Your session has expired');
             setcookie('txp_login', $c_userid, time() + 3600 * 24 * 365);
-            setcookie('txp_login_public', '', time() - 3600, $pub_path);
+            setcookie('txp_login_public', '', time() - 3600, $pub_path, $cookie_domain);
             $message = array(gTxt('bad_cookie'), E_ERROR);
         }
     } elseif ($p_userid && $p_password) {
@@ -297,7 +285,8 @@ function doTxpValidate()
                 'txp_login_public',
                 substr(md5($nonce), -10).$name,
                 ($stay ? time() + 3600 * 24 * 30 : 0),
-                $pub_path
+                $pub_path,
+                $cookie_domain
             );
 
             // Login is good, create $txp_user.
@@ -343,7 +332,7 @@ function doTxpValidate()
                     if ($row && $row['nonce'] && ($hash === bin2hex(pack('H*', substr(hash(HASHING_ALGORITHM, $row['nonce'].$selector.$row['old_pass']), 0, SALT_LENGTH))).$selector)) {
                         if (change_user_password($row['name'], $pass)) {
                             $body = gTxt('salutation', array('{name}' => $row['name'])).
-                                n.n.($p_alter ? gTxt('password_change_confirmation') : gTxt('password_set_confirmation').n.n.gTxt('log_in_at').' '.hu.'textpattern/index.php');
+                                n.n.($p_alter ? gTxt('password_change_confirmation') : gTxt('password_set_confirmation').n.n.gTxt('log_in_at').' '.ahu.'index.php');
                             $message = ($p_alter) ? gTxt('password_changed') : gTxt('password_set');
                             txpMail($row['email'], "[$sitename] ".$message, $body);
 

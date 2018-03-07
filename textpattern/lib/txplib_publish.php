@@ -4,7 +4,7 @@
  * Textpattern Content Management System
  * https://textpattern.com/
  *
- * Copyright (C) 2017 The Textpattern Development Team
+ * Copyright (C) 2018 The Textpattern Development Team
  *
  * This file is part of Textpattern.
  *
@@ -143,26 +143,26 @@ function article_column_map()
     }
 
     return array(
-        'thisid' => 'ID',
-        'posted' => 'uPosted',    // Calculated value!
-        'expires' => 'uExpires',  // Calculated value!
-        'modified' => 'uLastMod', // Calculated value!
-        'annotate' => 'Annotate',
+        'thisid'          => 'ID',
+        'posted'          => 'uPosted', // Calculated value!
+        'expires'         => 'uExpires', // Calculated value!
+        'modified'        => 'uLastMod', // Calculated value!
+        'annotate'        => 'Annotate',
         'comments_invite' => 'AnnotateInvite',
-        'authorid' => 'AuthorID',
-        'title' => 'Title',
-        'url_title' => 'url_title',
-        'description' => 'description',
-        'category1' => 'Category1',
-        'category2' => 'Category2',
-        'section' => 'Section',
-        'keywords' => 'Keywords',
-        'article_image' => 'Image',
-        'comments_count' => 'comments_count',
-        'body' => 'Body_html',
-        'excerpt' => 'Excerpt_html',
-        'override_form' => 'override_form',
-        'status' => 'Status',
+        'authorid'        => 'AuthorID',
+        'title'           => 'Title',
+        'url_title'       => 'url_title',
+        'description'     => 'description',
+        'category1'       => 'Category1',
+        'category2'       => 'Category2',
+        'section'         => 'Section',
+        'keywords'        => 'Keywords',
+        'article_image'   => 'Image',
+        'comments_count'  => 'comments_count',
+        'body'            => 'Body_html',
+        'excerpt'         => 'Excerpt_html',
+        'override_form'   => 'override_form',
+        'status'          => 'Status',
     ) + $custom_map;
 }
 
@@ -188,7 +188,10 @@ function getNeighbour($threshold, $s, $type, $atts = array(), $threshold_type = 
         return $cache[$key];
     }
 
-    $atts += array('expired' => true, 'sortdir' => 'desc');
+    $atts += array(
+        'expired' => true,
+        'sortdir' => 'desc',
+    );
     $id = $time = $keywords = $custom = '';
 
     extract($atts);
@@ -240,8 +243,14 @@ function getNeighbour($threshold, $s, $type, $atts = array(), $threshold_type = 
 
     // Invert $type for ascending sortdir.
     $types = array(
-        '>' => array('desc' => '>', 'asc' => '<'),
-        '<' => array('desc' => '<', 'asc' => '>'),
+        '>' => array(
+            'desc' => '>',
+            'asc'  => '<',
+        ),
+        '<' => array(
+            'desc' => '<',
+            'asc'  => '>',
+        ),
     );
 
     $type = ($type == '>') ? $types['>'][$sortdir] : $types['<'][$sortdir];
@@ -288,7 +297,11 @@ function getNextPrev($id = 0, $threshold = null, $s = '')
     if ($id !== 0) {
         // Pivot is specific article by ID: In lack of further information,
         // revert to default sort order 'Posted desc'.
-        $atts = filterAtts() + array('sortby' => 'Posted', 'sortdir' => 'DESC', 'thisid' => $id);
+        $atts = filterAtts() + array(
+            'sortby'  => 'Posted',
+            'sortdir' => 'DESC',
+            'thisid'  => $id,
+        );
     } else {
         // Pivot is $thisarticle: Use article attributes to find its neighbours.
         assert_article();
@@ -298,7 +311,10 @@ function getNextPrev($id = 0, $threshold = null, $s = '')
         }
 
         $s = $thisarticle['section'];
-        $atts = filterAtts() + array('thisid' => $thisarticle['thisid'], 'sort' => 'Posted DESC');
+        $atts = filterAtts() + array(
+            'thisid' => $thisarticle['thisid'],
+            'sort'   => 'Posted DESC',
+        );
         $m = preg_split('/\s+/', $atts['sort']);
 
         // If in doubt, fall back to chronologically descending order.
@@ -425,7 +441,7 @@ function parse($thing, $condition = true)
                 $else[$level] = $count[$level];
             } elseif ($tag[$level][1] === 'txp:') {
                 // Handle <txp::shortcode />.
-                $tag[$level][3] = "txp-yield form='".$tag[$level][2]."'".$tag[$level][3];
+                $tag[$level][3] = "yield form='".$tag[$level][2]."'".$tag[$level][3];
                 $tag[$level][2] = 'output_form';
             } elseif ($short_tags && $tag[$level][1] !== 'txp') {
                 // Handle <short::tags />.
@@ -435,7 +451,7 @@ function parse($thing, $condition = true)
             if ($chunk[strlen($chunk) - 2] === '/') {
                 // Self closed tag.
                 if ($chunk[1] === '/') {
-                    $trace->log("Ambiguous tag $chunk");
+                    trigger_error(gTxt('ambiguous_tag_format', array('{chunk}' => $chunk)), E_USER_WARNING);
                 }
 
                 $tags[$level][] = array($chunk, $tag[$level][2], trim($tag[$level][3]), null, null);
@@ -451,14 +467,17 @@ function parse($thing, $condition = true)
             } else {
                 // Closing tag.
                 if ($level < 1) {
-                    $trace->log("Lone closing tag $chunk");
+                    trigger_error(gTxt('missing_open_tag', array('{chunk}' => $chunk)), E_USER_WARNING);
                     $tags[$level][] = array($chunk, null, '', null, null);
                     $inside[$level] .= $chunk;
                 } else {
                     if ($i >= $last) {
-                        $trace->log('Unclosed tag'.n.$outside[$level].$inside[$level].n);
+                        trigger_error(gTxt('missing_close_tag', array('{chunk}' => $outside[$level])), E_USER_WARNING);
                     } elseif ($tag[$level-1][2] != $tag[$level][2]) {
-                        $trace->log('Tags mismatch '.$outside[$level].$inside[$level].$chunk);
+                        trigger_error(gTxt('mismatch_open_close_tag', array(
+                            '{from}' => $outside[$level],
+                            '{to}'   => $chunk,
+                        )), E_USER_WARNING);
                     }
 
                     $sha = sha1($inside[$level]);
@@ -538,8 +557,8 @@ function maybe_tag($tag)
 
 function processTags($tag, $atts = '', $thing = null)
 {
-    global $pretext, $production_status, $txp_current_tag, $txp_current_form, $txp_atts, $txp_tag, $trace;
-    static $registry = null, $max_pass = null;
+    global $pretext, $production_status, $txp_current_tag, $txp_atts, $txp_tag, $trace;
+    static $registry = null, $max_pass, $globals;
 
     if (empty($tag)) {
         return;
@@ -554,8 +573,14 @@ function processTags($tag, $atts = '', $thing = null)
     }
 
     if ($registry === null) {
-        $registry = Txp::get('\Textpattern\Tag\Registry');
         $max_pass = get_pref('secondpass', 1);
+        $registry = Txp::get('\Textpattern\Tag\Registry');
+        $globals = array_filter(
+            $registry->getRegistered(true),
+             function ($v) {
+                 return !is_bool($v);
+             }
+         );
     }
 
     $old_atts = $txp_atts;
@@ -570,9 +595,15 @@ function processTags($tag, $atts = '', $thing = null)
     if (!isset($txp_atts['txp-process'])) {
         $out = $registry->process($tag, $split, $thing);
     } else {
-        $process = empty($txp_atts['txp-process']) ? 0 : (is_numeric($txp_atts['txp-process']) ? (int) $txp_atts['txp-process'] : 1);
-        unset($txp_atts['txp-process']);
-        $out = !$process ? '' : ($process <= $pretext['secondpass'] + 1 ? $registry->process($tag, $split, $thing) : null);
+        $process = empty($txp_atts['txp-process']) || is_numeric($txp_atts['txp-process']) ? (int) $txp_atts['txp-process'] : 1;
+
+        if ($process <= $pretext['secondpass'] + 1) {
+            unset($txp_atts['txp-process']);
+            $out = $process > 0 ? $registry->process($tag, $split, $thing) : '';
+        } else {
+            $txp_atts['txp-process'] = $process;
+            $out = '';
+        }
     }
 
     if ($out === false) {
@@ -585,7 +616,7 @@ function processTags($tag, $atts = '', $thing = null)
         }
     }
 
-    if ($out === null || isset($txp_atts['txp-process']) && $txp_atts['txp-process'] > $pretext['secondpass'] + 1) {
+    if (isset($txp_atts['txp-process']) && (int) $txp_atts['txp-process'] > $pretext['secondpass'] + 1) {
         $out = $pretext['secondpass'] < $max_pass ? $txp_current_tag : '';
     } else {
         if ($thing === null && !empty($txp_atts['not'])) {
@@ -595,11 +626,15 @@ function processTags($tag, $atts = '', $thing = null)
         unset($txp_atts['txp-process'], $txp_atts['not']);
 
         if ($txp_atts) {
+            $pretext['_txp_atts'] = true;
+
             foreach ($txp_atts as $attr => &$val) {
-                if (isset($val)) {
+                if (isset($val) && isset($globals[$attr])) {
                     $out = $registry->processAttr($attr, $split, $out);
                 }
             }
+
+            $pretext['_txp_atts'] = false;
         }
     }
 
@@ -836,7 +871,7 @@ function filterAtts($atts = null)
             ), $atts, 0);
             $trace->log('[filterAtts accepted]');
         } else {
-            // TODO: deal w/ nested txp:article[_custom] tags.
+            // TODO: deal w/ nested txp:article[_custom] tags. See https://github.com/textpattern/textpattern/issues/1009
             $trace->log('[filterAtts ignored]');
         }
     }

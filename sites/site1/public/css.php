@@ -4,7 +4,7 @@
  * Textpattern Content Management System
  * https://textpattern.com/
  *
- * Copyright (C) 2017 The Textpattern Development Team
+ * Copyright (C) 2018 The Textpattern Development Team
  *
  * This file is part of Textpattern.
  *
@@ -21,5 +21,13 @@
  * along with Textpattern. If not, see <https://www.gnu.org/licenses/>.
  */
 
-include '../private/config.php';
-include txpath.'/../css.php';
+/**
+ * Outputs CSS files.
+ *
+ * @since 4.2.0
+ */
+
+$nolog = 1;
+
+define('txpinterface', 'css');
+include 'index.php';

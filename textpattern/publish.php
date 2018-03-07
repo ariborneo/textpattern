@@ -4,8 +4,7 @@
  * Textpattern Content Management System
  * https://textpattern.com/
  *
- * Copyright (C) 2005 Dean Allen
- * Copyright (C) 2017 The Textpattern Development Team
+ * Copyright (C) 2018 The Textpattern Development Team
  *
  * This file is part of Textpattern.
  *
@@ -115,6 +114,26 @@ if (!defined('ihu')) {
     define('ihu', hu);
 }
 
+// HTTP address of Textpattern admin URL.
+if (!defined('ahu')) {
+    if (empty($txpcfg['admin_url'])) {
+        $adminurl = hu.'textpattern/';
+    } else {
+        $adminurl = PROTOCOL.rtrim(preg_replace('|^https?://|', '', $txpcfg['admin_url']), '/').'/';
+    }
+
+    define('ahu', $adminurl);
+}
+
+// Shared admin and public cookie_domain when using multisite admin URL.
+if (!defined('cookie_domain')) {
+    if (!isset($txpcfg['cookie_domain'])) {
+        $txpcfg['cookie_domain'] = '';
+    }
+
+    define('cookie_domain', $txpcfg['cookie_domain']);
+}
+
 if (!defined('SITE_HOST')) {
     /**
      * Site hostname.
@@ -160,7 +179,9 @@ if (!empty($locale)) {
 $txp_user = null;
 
 // i18n.
-$textarray = (txpinterface == 'css') ? array() : load_lang(LANG);
+if (txpinterface !== 'css') {
+    load_lang(LANG);
+}
 
 // Tidy up the site.
 janitor();
@@ -178,7 +199,7 @@ $pretext = !isset($pretext) ? array() : $pretext;
 $pretext = array_merge($pretext, pretext($s, $prefs));
 callback_event('pretext_end');
 extract($pretext);
-$pretext['secondpass'] = 0;
+$pretext += array('secondpass' => 0, '_txp_atts' => false);
 
 // Now that everything is initialised, we can crank down error reporting.
 set_error_level($production_status);
@@ -315,6 +336,7 @@ function preText($s, $prefs)
                     // AuthorID gets resolved from Name further down.
 
                 case urldecode(strtolower(urlencode(gTxt('file_download')))):
+                case 'file_download':
                     $out['s'] = 'file_download';
                     $out['id'] = (!empty($u2)) ? $u2 : '';
                     $out['filename'] = (!empty($u3)) ? $u3 : '';
@@ -411,11 +433,12 @@ function preText($s, $prefs)
             $rs = safe_row('*', 'txp_file', "id = ".intval($out['id'])." AND status = ".STATUS_LIVE." AND created <= ".now('created').$fn);
         }
 
-        return (!empty($rs)) ? array_merge($out, $rs) : array('s' => 'file_download', 'file_error' => 404, 'status' => 404);
+        $is_404 = $is_404 || empty($rs);
+        $out = array_merge($out, $is_404 ? array('id' => '', 'file_error' => 404, 'status' => 404) : $rs);
     }
 
     // Allow article preview.
-    if (gps('txpreview')) {
+    elseif (gps('txpreview')) {
         doAuth();
 
         if (!has_privs('article.preview')) {
@@ -453,12 +476,11 @@ function preText($s, $prefs)
     $out['status'] = ($is_404 ? '404' : '200');
     $out['pg'] = is_numeric($out['pg']) ? intval($out['pg']) : '';
     $out['id'] = is_numeric($out['id']) ? intval($out['id']) : '';
+    $id = $out['id'];
 
     if (!$is_404) {
-        $out['s'] = (empty($out['s'])) ? 'default' : $out['s'];
+        $out['s'] = empty($out['s']) ? 'default' : $out['s'];
     }
-    $s = $out['s'];
-    $id = $out['id'];
 
     // Hackish.
     global $is_article_list;
@@ -467,7 +489,7 @@ function preText($s, $prefs)
         $is_article_list = true;
     }
 
-    if (!$is_404 && $id) {
+    if (!$is_404 && $id && $out['s'] !== 'file_download') {
         $a = safe_row(
             "*, UNIX_TIMESTAMP(Posted) AS uPosted, UNIX_TIMESTAMP(Expires) AS uExpires, UNIX_TIMESTAMP(LastMod) AS uLastMod",
             'textpattern',
@@ -488,8 +510,23 @@ function preText($s, $prefs)
     }
 
     // By this point we should know the section, so grab its page and CSS.
-    if (txpinterface != 'css') {
-        $rs = safe_row("page, css", "txp_section", "name = '".doSlash($s)."' LIMIT 1");
+    // Logged-in users with enough privs use the skin they're currently editing.
+    if (txpinterface != 'css' || get_pref('parse_css')) {
+        $s = empty($out['s']) || $is_404 ? 'default' : $out['s'];
+        $rs = safe_row("skin, page, css", "txp_section", "name = '".doSlash($s)."' LIMIT 1");
+
+        $userInfo = is_logged_in();
+        $skin = '';
+
+        if (isset($userInfo['name']) && has_privs('skin', $userInfo['name'])) {
+            // Can't use get_pref() because it assumes $txp_user, which is not set on public site.
+            $skin = safe_field(
+                "val",
+                "txp_prefs",
+                "name = 'skin_editing' AND (user_name = '".doSlash($userInfo['name'])."')");
+        }
+
+        $out['skin'] = (!empty($skin) ? $skin : (isset($rs['skin']) ? $rs['skin'] : ''));
         $out['page'] = isset($rs['page']) ? $rs['page'] : '';
         $out['css'] = isset($rs['css']) ? $rs['css'] : '';
     }
@@ -531,7 +568,7 @@ function textpattern()
     txp_status_header('200 OK');
 
     set_error_handler('tagErrorHandler');
-    $html = parse_page($pretext['page']);
+    $html = parse_page($pretext['page'], $pretext['skin']);
 
     if ($html === false) {
         txp_die(gTxt('unknown_section'), '404');
@@ -550,9 +587,10 @@ function textpattern()
 }
 
 // -------------------------------------------------------------
-function output_css($s = '', $n = '')
+function output_css($s = '', $n = '', $t = '')
 {
     $order = '';
+    $skinquery = $t ? " AND skin='".doSlash($t)."'" : '';
 
     if ($n) {
         if (!is_scalar($n)) {
@@ -570,13 +608,14 @@ function output_css($s = '', $n = '')
             txp_die('Not Found', 404);
         }
 
-        $cssname = safe_field('css', 'txp_section', "name = '".doSlash($s)."'");
+        $cssname = safe_field('css', 'txp_section', "name='".doSlash($s)."' AND skin='".doSlash($t)."'");
     }
 
     if (!empty($cssname)) {
-        $css = join(n, safe_column_num('css', 'txp_css', "name IN ('$cssname')".$order));
+        $css = join(n, safe_column_num('css', 'txp_css', "name IN ('$cssname')".$skinquery.$order));
         set_error_handler('tagErrorHandler');
-        echo parse_page(null, $css);
+        @header('Content-Type: text/css; charset=utf-8');
+        echo get_pref('parse_css', false) ? parse_page(null, null, $css) : $css;
         restore_error_handler();
     }
 }
@@ -677,9 +716,8 @@ function article($atts, $thing = null)
 
 function doArticles($atts, $iscustom, $thing = null)
 {
-    global $pretext, $prefs, $thispage;
+    global $pretext, $thispage;
     extract($pretext);
-    extract($prefs);
     $customFields = getCustomFields();
     $customlAtts = array_null(array_flip($customFields));
 
@@ -693,7 +731,7 @@ function doArticles($atts, $iscustom, $thing = null)
             'excerpted' => '',
             'author'    => '',
             'month'     => '',
-            'expired'   => $publish_expired_articles,
+            'expired'   => get_pref('publish_expired_articles'),
             'id'        => '',
             'exclude'   => '',
         );
@@ -722,6 +760,8 @@ function doArticles($atts, $iscustom, $thing = null)
         'pgonly'        => 0,
         'wraptag'       => '',
         'break'         => '',
+        'breakby'       => '',
+        'breakclass'    => '',
         'label'         => '',
         'labeltag'      => '',
         'class'         => '',
@@ -737,7 +777,7 @@ function doArticles($atts, $iscustom, $thing = null)
         $theAtts['frontpage'] = ($theAtts['frontpage'] && $s && $s == 'default');
         $theAtts['excerpted'] = 0;
         $theAtts['exclude'] = 0;
-        $theAtts['expired'] = $publish_expired_articles;
+        $theAtts['expired'] = get_pref('publish_expired_articles');
 
         filterAtts($theAtts);
     }
@@ -766,7 +806,7 @@ function doArticles($atts, $iscustom, $thing = null)
 
         // Searchable article fields are limited to the columns of the
         // textpattern table and a matching fulltext index must exist.
-        $cols = do_list_unique($searchable_article_fields);
+        $cols = do_list_unique(get_pref('searchable_article_fields'));
 
         if (empty($cols) or $cols[0] == '') {
             $cols = array('Title', 'Body');
@@ -812,10 +852,19 @@ function doArticles($atts, $iscustom, $thing = null)
     }
 
     // Building query parts.
-    $frontpage = ($frontpage and (!$q or $issticky)) ? filterFrontPage() : '';
+    if ($exclude && $exclude !== true) {
+        $exclude = array_map('strtolower', do_list_unique($exclude));
+        $excluded = array_filter($exclude, 'is_numeric');
+    } else {
+        $exclude or $exclude = array();
+        $excluded = array();
+    }
+
+    $frontpage = ($frontpage && (!$q || $issticky)) ? filterFrontPage() : '';
+    $match = do_list_unique($match);
+    $category !== true or $category = category(array());
     $category  = join("','", doSlash(do_list_unique($category)));
     $categories = array();
-    $match = do_list_unique($match);
 
     if (in_array('Category1', $match)) {
         $categories[] = "Category1 IN ('$category')";
@@ -825,52 +874,31 @@ function doArticles($atts, $iscustom, $thing = null)
         $categories[] = "Category2 IN ('$category')";
     }
 
+    $not = $exclude === true || in_array('category', $exclude) ? '!' : '';
     $categories = join(" OR ", $categories);
-    $category  = (!$category or !$categories)  ? '' : " AND ($categories)";
-    $section   = (!$section)   ? '' : " AND Section IN ('".join("','", doSlash(do_list_unique($section)))."')";
+    $category  = (!$category || !$categories)  ? '' : " AND $not($categories)";
+    $not = $exclude === true || in_array('section', $exclude) ? 'NOT' : '';
+    $section !== true or $section = section(array());
+    $section   = (!$section)   ? '' : " AND Section $not IN ('".join("','", doSlash(do_list_unique($section)))."')";
     $excerpted = (!$excerpted) ? '' : " AND Excerpt !=''";
-    $author    = (!$author)    ? '' : " AND AuthorID IN ('".join("','", doSlash(do_list_unique($author)))."')";
-    $ids = $id ? array_map('intval', do_list_unique($id)) : array();
-    $exclude = $exclude ? array_map('intval', do_list_unique($exclude)) : array();
-    $id        = ((!$id)        ? '' : " AND ID IN (".join(',', $ids).")")
-        .((!$exclude)   ? '' : " AND ID NOT IN (".join(',', $exclude).")");
+    $not = $exclude === true || in_array('author', $exclude) ? 'NOT' : '';
+    $author !== true or $author = author(array('escape' => false, 'title' => false));
+    $author    = (!$author)    ? '' : " AND AuthorID $not IN ('".join("','", doSlash(do_list_unique($author)))."')";
+    $not = $exclude === true || in_array('id', $exclude) ? 'NOT' : '';
+    $ids = $id ? ($id === true ? array(article_id()) : array_map('intval', do_list_unique($id))) : array();
+    $id        = ((!$ids)        ? '' : " AND ID $not IN (".join(',', $ids).")")
+        .(!$excluded   ? '' : " AND ID NOT IN (".join(',', $excluded).")");
 
-    if (!isset($time) || $time === 'any') {
-        $time = ($month ? " AND Posted LIKE '".doSlash($month)."%'" : '').
-        ($time ? '' : " AND Posted <= ".now('posted'));
-    } elseif (strpos($time, '%') !== false) {
-        $month = $month ? strtotime($month) : time();
-        $time = " AND Posted LIKE '".doSlash(strftime($time, $month))."%'";
-    } else {
-        $start = $month ? strtotime($month) : false;
+    $timeq = '';
 
-        if ($start === false) {
-            $from = $month ? "'".doSlash($month)."'" : now('posted');
-            $start = time();
-        } else {
-            $from = "FROM_UNIXTIME($start)";
-        }
-
-        switch ($time) {
-            case 'future':
-                $time = " AND Posted > $from";
-                break;
-            case 'past':
-                $time = " AND Posted <= $from";
-                break;
-            default:
-                $stop = strtotime($time, $start) or $stop = time();
-
-                if ($start > $stop) {
-                    list($start, $stop) = array($stop, $start);
-                }
-
-                $time = " AND Posted BETWEEN FROM_UNIXTIME($start) AND FROM_UNIXTIME($stop)";
-        }
+    if ($time === null || $month || !$expired || $expired == '1') {
+        $timeq .= buildTimeSql($month, $time === null ? 'past' : $time);
     }
 
-    if (!$expired) {
-        $time .= " AND (".now('expires')." <= Expires OR Expires IS NULL)";
+    if ($expired && $expired != '1') {
+        $timeq .= buildTimeSql($expired, $time === null && !strtotime($expired) ? 'any' : $time, 'Expires');
+    } elseif (!$expired) {
+        $timeq .= " AND (".now('expires')." <= Expires OR Expires IS NULL)";
     }
 
     $custom = '';
@@ -888,14 +916,18 @@ function doArticles($atts, $iscustom, $thing = null)
     }
 
     // Allow keywords for no-custom articles. That tagging mode, you know.
+    $keywords !== true or $keywords = keywords(array());
+
     if ($keywords) {
+        $keyparts = array();
+        $not = $exclude === true || in_array('keywords', $exclude) ? '!' : '';
         $keys = doSlash(do_list_unique($keywords));
 
         foreach ($keys as $key) {
             $keyparts[] = "FIND_IN_SET('".$key."', Keywords)";
         }
 
-        $keywords = " AND (".join(' or ', $keyparts).")";
+        !$keyparts or $keywords = " AND $not(".join(' or ', $keyparts).")";
     }
 
     if ($q && $searchsticky) {
@@ -906,7 +938,7 @@ function doArticles($atts, $iscustom, $thing = null)
         $statusq = " AND Status = ".intval($status);
     }
 
-    $where = "1 = 1".$statusq.$time.
+    $where = "1 = 1".$statusq.$timeq.
         $search.$id.$category.$section.$excerpted.$author.$keywords.$custom.$frontpage;
 
     // Do not paginate if we are on a custom list.
@@ -944,8 +976,8 @@ function doArticles($atts, $iscustom, $thing = null)
     }
 
     // Preserve order of custom article ids unless 'sort' attribute is set.
-    if (!empty($atts['id']) && empty($atts['sort'])) {
-        $safe_sort = "FIELD(id, ".join(',', $ids).")";
+    if (!empty($ids) && empty($atts['sort'])) {
+        $safe_sort = "FIELD(id, ".join(',', $ids)."), ".doSlash($sort);
     } else {
         $safe_sort = doSlash($sort);
     }
@@ -963,16 +995,14 @@ function doArticles($atts, $iscustom, $thing = null)
         $fname = (!empty($listform) ? $listform : $form);
     }
 
-    if ($rs) {
+    if ($rs && $last = numRows($rs)) {
         $count = 0;
-        $last = numRows($rs);
-
         $articles = array();
 
         while ($a = nextRow($rs)) {
             ++$count;
             populateArticleData($a);
-            global $thisarticle, $uPosted, $limit;
+            global $thisarticle;
             $thisarticle['is_first'] = ($count == 1);
             $thisarticle['is_last'] = ($count == $last);
 
@@ -986,19 +1016,18 @@ function doArticles($atts, $iscustom, $thing = null)
                 }
 
                 $articles[] = parse(gps('Form'));
-            } elseif ($allowoverride and $a['override_form']) {
+            } elseif ($allowoverride && $a['override_form']) {
                 $articles[] = parse_form($a['override_form']);
             } else {
                 $articles[] = ($thing) ? parse($thing) : parse_form($fname);
             }
 
-            // Sending these to paging_link(); Required?
-            $uPosted = $a['uPosted'];
-
             unset($GLOBALS['thisarticle']);
         }
 
-        return doLabel($label, $labeltag).doWrap($articles, $wraptag, $break, $class);
+        return doLabel($label, $labeltag).doWrap($articles, $wraptag, compact('break', 'breakby', 'breakclass', 'class'));
+    } else {
+        return parse($thing, false);
     }
 }
 
@@ -1006,8 +1035,7 @@ function doArticles($atts, $iscustom, $thing = null)
 
 function doArticle($atts, $thing = null)
 {
-    global $pretext, $prefs, $thisarticle;
-    extract($prefs);
+    global $pretext, $thisarticle;
     extract($pretext);
 
     extract(gpsa(array(
@@ -1059,24 +1087,26 @@ function doArticle($atts, $thing = null)
         }
     }
 
-    if (!empty($thisarticle) and ($thisarticle['status'] == $status or gps('txpreview'))) {
+    if (!empty($thisarticle) && ($thisarticle['status'] == $status || gps('txpreview'))) {
         extract($thisarticle);
         $thisarticle['is_first'] = 1;
         $thisarticle['is_last'] = 1;
 
-        if ($allowoverride and $override_form) {
+        if ($allowoverride && $override_form) {
             $article = parse_form($override_form);
         } else {
             $article = ($thing) ? parse($thing) : parse_form($form);
         }
 
-        if ($use_comments and $comments_auto_append) {
+        if (get_pref('use_comments') && get_pref('comments_auto_append')) {
             $article .= parse_form('comments_display');
         }
 
         unset($GLOBALS['thisarticle']);
 
         return $article;
+    } else {
+        return parse($thing, false);
     }
 }
 
@@ -1126,8 +1156,12 @@ function makeOut()
 
 function validContext($context)
 {
-    foreach (array('article', 'image', 'file', 'link') as $type) {
-        $valid[gTxt($type.'_context')] = $type;
+    static $valid = null;
+
+    if (empty($valid)) {
+        foreach (array('article', 'image', 'file', 'link') as $type) {
+            $valid[gTxt($type.'_context')] = $type;
+        }
     }
 
     return isset($valid[$context]) ? $valid[$context] : 'article';

@@ -4,8 +4,7 @@
  * Textpattern Content Management System
  * https://textpattern.com/
  *
- * Copyright (C) 2005 Dean Allen
- * Copyright (C) 2017 The Textpattern Development Team
+ * Copyright (C) 2018 The Textpattern Development Team
  *
  * This file is part of Textpattern.
  *
@@ -62,6 +61,7 @@ $vars = array(
     'AnnotateInvite',
     'publish_now',
     'reset_time',
+    'expire_now',
     'AuthorID',
     'sPosted',
     'LastModID',
@@ -182,14 +182,14 @@ function article_save()
         }
     } else {
         $oldArticle = array('Status' => STATUS_PENDING,
-            'url_title' => '',
-            'Title' => '',
-            'textile_body' => $use_textile,
+            'url_title'       => '',
+            'Title'           => '',
+            'textile_body'    => $use_textile,
             'textile_excerpt' => $use_textile,
-            'sLastMod' => null,
-            'LastModID' => $txp_user,
-            'sPosted' => time(),
-            'sExpires' => null
+            'sLastMod'        => null,
+            'LastModID'       => $txp_user,
+            'sPosted'         => time(),
+            'sExpires'        => null,
         );
     }
 
@@ -233,7 +233,10 @@ function article_save()
     }
 
     // Set and validate expiry timestamp.
-    if (empty($exp_year)) {
+    if ($expire_now) {
+        $ts = time();
+        $expires = $ts - tz_offset($ts);
+    } elseif (empty($exp_year)) {
         $expires = 0;
     } else {
         if (empty($exp_month)) {
@@ -617,7 +620,7 @@ function article_edit($message = '', $concurrent = false, $refresh_partials = fa
             return;
         }
 
-        $rs['reset_time'] = $rs['publish_now'] = false;
+        $rs['reset_time'] = $rs['publish_now'] = $rs['expire_now'] = false;
     } else {
         $pull = false; // Assume they came from post.
 
@@ -643,18 +646,6 @@ function article_edit($message = '', $concurrent = false, $refresh_partials = fa
                     $store_out['textile_body'] = $oldArticle['textile_body'];
                     $store_out['textile_excerpt'] = $oldArticle['textile_excerpt'];
                 }
-            }
-        }
-
-        // Use preferred Textfilter as default and fallback.
-        $hasfilter = new \Textpattern\Textfilter\Constraint(null);
-        $validator = new Validator();
-
-        foreach (array('textile_body', 'textile_excerpt') as $k) {
-            $hasfilter->setValue($store_out[$k]);
-            $validator->setConstraints($hasfilter);
-            if (!$validator->validate()) {
-                $store_out[$k] = $use_textile;
             }
         }
 
@@ -926,7 +917,7 @@ function article_edit($message = '', $concurrent = false, $refresh_partials = fa
                 $persist_timestamp = time();
             }
 
-            $posted_block = pluggable_ui(
+            $posted_block = tag(pluggable_ui(
                 'article_ui',
                 'timestamp',
                 inputLabel(
@@ -954,10 +945,10 @@ function article_edit($message = '', $concurrent = false, $refresh_partials = fa
                 n.tag(
                     checkbox('publish_now', '1', true, '', 'publish_now').
                     n.tag(gTxt('set_to_now'), 'label', array('for' => 'publish_now')),
-                    'div', array('class' => 'posted-now')
+                    'div', array('class' => 'txp-form-field posted-now')
                 ),
                 array('sPosted' => $persist_timestamp) + $rs
-            );
+            ), 'div', array('id' => 'publish-datetime-group'));
 
             // Expires.
             if (!empty($store_out['exp_year'])) {
@@ -969,7 +960,7 @@ function article_edit($message = '', $concurrent = false, $refresh_partials = fa
                 $persist_timestamp = 0;
             }
 
-            $expires_block = pluggable_ui(
+            $expires_block = tag(pluggable_ui(
                 'article_ui',
                 'expires',
                 inputLabel(
@@ -993,9 +984,14 @@ function article_edit($message = '', $concurrent = false, $refresh_partials = fa
                     'expire_time',
                     array('', 'instructions_expire_time'),
                     array('class' => 'txp-form-field time expires')
+                ).
+                n.tag(
+                    checkbox('expire_now', '1', false, '', 'expire_now').
+                    n.tag(gTxt('set_expire_now'), 'label', array('for' => 'expire_now')),
+                    'div', array('class' => 'txp-form-field expire-now')
                 ),
                 $rs
-            );
+            ), 'div', array('id' => 'expires-datetime-group'));
         } else {
             // Timestamp.
             $posted_block = $partials['posted']['html'];
@@ -1122,7 +1118,7 @@ function status_display($status)
         'status',
         selectInput('Status', $statuses, $status, false, '', 'status'),
         'status',
-        array('', 'instructions_status'),
+        array('status', 'instructions_status'),
         array('class' => 'txp-form-field status')
     );
 }
@@ -1262,11 +1258,11 @@ function get_status_message($Status)
 {
     switch ($Status) {
         case STATUS_PENDING:
-            return gTxt("article_saved_pending");
+            return gTxt('article_saved_pending');
         case STATUS_HIDDEN:
-            return gTxt("article_saved_hidden");
+            return gTxt('article_saved_hidden');
         case STATUS_DRAFT:
-            return gTxt("article_saved_draft");
+            return gTxt('article_saved_draft');
         default:
             return gTxt('article_posted');
     }
@@ -1281,6 +1277,18 @@ function get_status_message($Status)
 
 function textile_main_fields($incoming)
 {
+    // Use preferred Textfilter as default and fallback.
+    $hasfilter = new \Textpattern\Textfilter\Constraint(null);
+    $validator = new Validator();
+
+    foreach (array('textile_body', 'textile_excerpt') as $k) {
+        $hasfilter->setValue($incoming[$k]);
+        $validator->setConstraints($hasfilter);
+        if (!$validator->validate()) {
+            $incoming[$k] = get_pref('use_textile');
+        }
+    }
+
     $textile = new \Textpattern\Textile\Parser();
 
     $incoming['Title_plain'] = trim($incoming['Title']);
@@ -1409,7 +1417,10 @@ function article_partial_actions($rs)
         .article_partial_article_clone($rs)
         .article_partial_article_view($rs)
         : gTxt('add_new_article'),
-        array('class' => 'txp-actions', 'id' => 'txp-article-actions'));
+        array(
+            'class' => 'txp-actions',
+            'id'    => 'txp-article-actions',
+        ));
 }
 
 /**
@@ -2016,7 +2027,7 @@ function article_partial_posted($rs)
         n.tag(
             checkbox('reset_time', '1', $reset_time, '', 'reset_time').
             n.tag(gTxt('reset_time'), 'label', array('for' => 'reset_time')),
-            'div', array('class' => 'reset-time')
+            'div', array('class' => 'txp-form-field reset-time')
         );
 
     return n.tag_start('div', array('id' => 'publish-datetime-group')).
@@ -2060,6 +2071,11 @@ function article_partial_expires($rs)
             'expire_time',
             array('', 'instructions_expire_time'),
             array('class' => 'txp-form-field time expires')
+        ).
+        n.tag(
+            checkbox('expire_now', '1', $expire_now, '', 'expire_now').
+            n.tag(gTxt('set_expire_now'), 'label', array('for' => 'expire_now')),
+            'div', array('class' => 'txp-form-field expire-now')
         ).
         hInput('sExpires', $sExpires);
 

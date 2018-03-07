@@ -4,7 +4,7 @@
  * Textpattern Content Management System
  * https://textpattern.com/
  *
- * Copyright (C) 2017 The Textpattern Development Team
+ * Copyright (C) 2018 The Textpattern Development Team
  *
  * This file is part of Textpattern.
  *
@@ -27,7 +27,6 @@
  * @since 4.2.0
  */
 
-header('Content-Type: text/css; charset=utf-8');
 $nolog = 1;
 
 define('txpinterface', 'css');

@@ -4,8 +4,7 @@
  * Textpattern Content Management System
  * https://textpattern.com/
  *
- * Copyright (C) 2005 Dean Allen
- * Copyright (C) 2017 The Textpattern Development Team
+ * Copyright (C) 2018 The Textpattern Development Team
  *
  * This file is part of Textpattern.
  *
@@ -87,7 +86,7 @@ function prefs_save()
     }
 
     if (!empty($post['file_max_upload_size'])) {
-        $post['file_max_upload_size'] = real_max_upload_size($post['file_max_upload_size']);
+        $post['file_max_upload_size'] = real_max_upload_size($post['file_max_upload_size'], false);
     }
 
     if (isset($post['auto_dst'])) {
@@ -140,6 +139,7 @@ function prefs_save()
     }
 
     update_lastmod('preferences_saved');
+    $prefs = get_prefs();
 
     prefs_list(gTxt('preferences_saved'));
 }
@@ -187,23 +187,29 @@ function prefs_list($message = '')
         join(" AND ", $sql)." ORDER BY sort_value = 0, sort_value, event, position"
     );
 
-    $last_event = null;
+    $last_event = $last_sub_event = null;
     $out = array();
     $build = array();
     $groupOut = array();
 
     if (numRows($rs)) {
+        $pophelp_keys = \Txp::get('\Textpattern\Module\Help\HelpAdmin')->pophelp_keys('prefs');
+
         while ($a = nextRow($rs)) {
+            $eventParts = explode('.', $a['event']);
+            $mainEvent = $eventParts[0];
+            $subEvent = isset($eventParts[1]) ? $eventParts[1] : '';
+
             if (!has_privs('prefs.'.$a['event'])) {
                 continue;
             }
 
-            if ($a['event'] !== $last_event) {
+            if ($mainEvent !== $last_event) {
                 if ($last_event !== null) {
                     $build[] = tag(
                         hed(gTxt($last_event), 2, array('id' => 'prefs_group_'.$last_event.'-label')).
                         join(n, $out), 'section', array(
-                            'class'           => 'txp-prefs-group',
+                            'class'           => 'txp-tabs-vertical-group',
                             'id'              => 'prefs_group_'.$last_event,
                             'aria-labelledby' => 'prefs_group_'.$last_event.'-label',
                         )
@@ -219,21 +225,24 @@ function prefs_list($message = '')
                         'li');
                 }
 
-                $last_event = $a['event'];
+                $last_event = $mainEvent;
                 $out = array();
             }
 
-            $label = '';
-
-            if (!in_array($a['html'], array('yesnoradio', 'is_dst'))) {
-                $label = $a['name'];
+            switch ($a['html']) {
+                case 'yesnoradio':
+                case 'is_dst':
+                    $label = '';
+                    break;
+                case 'gmtoffset_select':
+                    $label = 'tz_timezone';
+                    break;
+                default:
+                    $label = $a['name'];
+                    break;
             }
 
-            // TODO: remove exception when custom fields move to meta store.
-            $help = '';
-            if (strpos($a['name'], 'custom_') === false) {
-                $help = $a['name'];
-            }
+            $help = in_array($a['name'], $pophelp_keys, true) ? $a['name'] : '';
 
             if ($a['html'] == 'text_input') {
                 $size = INPUT_REGULAR;
@@ -241,11 +250,16 @@ function prefs_list($message = '')
                 $size = '';
             }
 
+            if ($subEvent !== '' && $last_sub_event !== $subEvent) {
+                $out[] = hed(gTxt($subEvent), 3);
+                $last_sub_event = $subEvent;
+            }
+
             $out[] = inputLabel(
                 $a['name'],
                 pref_func($a['html'], $a['name'], $a['val'], $size),
                 $label,
-                $help,
+                array($help, 'instructions_'.$a['name']),
                 array(
                     'class' => 'txp-form-field',
                     'id'    => 'prefs-'.$a['name'],
@@ -264,7 +278,7 @@ function prefs_list($message = '')
         $build[] = tag(
             hed(gTxt($last_event), 2, array('id' => 'prefs_group_'.$last_event.'-label')).
             join(n, $out), 'section', array(
-                'class'           => 'txp-prefs-group',
+                'class'           => 'txp-tabs-vertical-group',
                 'id'              => 'prefs_group_'.$last_event,
                 'aria-labelledby' => 'prefs_group_'.$last_event.'-label',
             )
@@ -429,14 +443,14 @@ function is_dst($name, $val)
             var dstOn = $("#auto_dst-1");
             var dstOff = $("#auto_dst-0");
 
-            if (radio) {
+            if (radio.length) {
                 if (dstOn.prop("checked")) {
                     radioInput.prop("disabled", "disabled");
                     radioLabel.addClass('disabled');
                 }
 
                 dstOff.click(function () {
-                    radioInput.removeProp("disabled");
+                    radioInput.prop("disabled", null);
                     radioLabel.removeClass('disabled');
                 });
 
@@ -447,7 +461,7 @@ function is_dst($name, $val)
             }
         });
 EOS
-    );
+    , false);
 
     return pluggable_ui('prefs_ui', 'is_dst', $ui, $name, $val);
 }
@@ -616,8 +630,8 @@ function dateformats($name, $val)
 function permlink_format($name, $val)
 {
     $vals = array(
-        '0'   => gTxt('permlink_intercapped'),
-        '1'   => gTxt('permlink_hyphenated'),
+        '0' => gTxt('permlink_intercapped'),
+        '1' => gTxt('permlink_hyphenated'),
     );
 
     return selectInput($name, $vals, $val, '', '', $name);
@@ -723,16 +737,7 @@ function custom_set($name, $val)
 
 function themename($name, $val)
 {
-    $themes = \Textpattern\Admin\Theme::names();
-    foreach ($themes as $t) {
-        $theme = \Textpattern\Admin\Theme::factory($t);
-        if ($theme) {
-            $m = $theme->manifest();
-            $title = empty($m['title']) ? ucwords($theme->name) : $m['title'];
-            $vals[$t] = $title;
-            unset($theme);
-        }
-    }
+    $vals = \Textpattern\Admin\Theme::names(1);
     asort($vals, SORT_STRING);
 
     return pluggable_ui('prefs_ui', 'theme_name',
@@ -773,43 +778,19 @@ function defaultPublishStatus($name, $val)
 }
 
 /**
- * Gets the maximum allowed file upload size.
+ * Renders a HTML &lt;select&gt; list of module_pophelp options.
  *
- * Computes the maximum acceptable file size to the application if the
- * user-selected value is larger than the maximum allowed by the current PHP
- * configuration.
- *
- * @param  int $user_max Desired upload size supplied by the administrator
- * @return int Actual value; the lower of user-supplied value or system-defined value
+ * @param  string $name HTML name and id of the list
+ * @param  string $val  Initial (or current) selected item
+ * @return string HTML
  */
 
-function real_max_upload_size($user_max)
+function module_pophelp($name, $val)
 {
-    // The minimum of the candidates, is the real max. possible size
-    $candidates = array($user_max,
-                        ini_get('post_max_size'),
-                        ini_get('upload_max_filesize'), );
-    $real_max = null;
-    foreach ($candidates as $item) {
-        $val = trim($item);
-        $modifier = strtolower(substr($val, -1));
-        switch ($modifier) {
-            // The 'G' modifier is available since PHP 5.1.0
-            case 'g':
-                $val *= 1024;
-            case 'm':
-                $val *= 1024;
-            case 'k':
-                $val *= 1024;
-        }
-        if ($val > 1) {
-            if (is_null($real_max)) {
-                $real_max = $val;
-            } elseif ($val < $real_max) {
-                $real_max = $val;
-            }
-        }
-    }
+    $vals = array(
+        '0' => gTxt('none'),
+        '1' => gTxt('pophelp'),
+    );
 
-    return $real_max;
+    return selectInput($name, $vals, $val, '', '', $name);
 }

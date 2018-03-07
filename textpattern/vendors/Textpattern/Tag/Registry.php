@@ -4,7 +4,7 @@
  * Textpattern Content Management System
  * https://textpattern.com/
  *
- * Copyright (C) 2017 The Textpattern Development Team
+ * Copyright (C) 2018 The Textpattern Development Team
  *
  * This file is part of Textpattern.
  *
@@ -158,7 +158,7 @@ class Registry implements \Textpattern\Container\ReusableInterface
 
     public function isRegisteredAttr($tag)
     {
-        return isset($this->atts[$tag]) && !is_bool($this->atts[$tag]) && is_callable($this->atts[$tag]);
+        return isset($this->atts[$tag]) && is_callable($this->atts[$tag]);
     }
 
     /**
